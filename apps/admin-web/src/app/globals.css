@@ -1,0 +1,25 @@
+:root { --fg: #17202a; --muted: #5b6570; --accent: #0b6e4f; --danger: #b3261e; --bg: #f6f7f9; --card: #fff; --border: #dde3e8; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: var(--fg); background: var(--bg); }
+.topbar { background: #0f2e26; color: #fff; padding: 12px 24px; }
+.container { max-width: 1080px; margin: 0 auto; padding: 24px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+.btn { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--accent); color: #fff; cursor: pointer; font-size: 14px; }
+.btn.secondary { background: #fff; color: var(--fg); }
+.btn.danger { background: var(--danger); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+input, select { padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; width: 100%; margin-bottom: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge.APPROVED, .badge.ACTIVE { background: #dff5e9; color: var(--accent); }
+.badge.PENDING, .badge.PENDING_VERIFICATION, .badge.PENDING_APPROVAL, .badge.OPEN { background: #fdf3d7; color: #8a6100; }
+.badge.REJECTED, .badge.SUSPENDED, .badge.REVOKED { background: #fbe3e1; color: var(--danger); }
+.badge.INFO_REQUESTED { background: #e3ecfb; color: #2f57a8; }
+.muted { color: var(--muted); font-size: 13px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.error { color: var(--danger); font-size: 14px; }
+nav.tabs { display: flex; gap: 12px; margin-bottom: 16px; }
+nav.tabs a { color: var(--muted); text-decoration: none; padding-bottom: 4px; }
+nav.tabs a.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+@media (max-width: 640px) { .container { padding: 12px; } table { font-size: 12px; } }

@@ -1,0 +1,476 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum PlatformRole {
+  PLATFORM_SUPER_ADMIN
+}
+
+enum OrgRole {
+  ORGANIZATION_OWNER
+  ORGANIZATION_ADMIN
+  SECURITY_GUARD
+  VEHICLE_OWNER
+  REGISTERED_USER
+}
+
+enum OrgType {
+  RESIDENTIAL_SOCIETY
+  OFFICE_COMPANY
+  EDUCATIONAL_INSTITUTION
+  OTHER
+}
+
+enum OrgStatus {
+  PENDING_VERIFICATION
+  INFO_REQUESTED
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum MembershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REMOVED
+  SUSPENDED
+}
+
+enum DocumentType {
+  REGISTRATION_CERTIFICATE
+  ADDRESS_PROOF
+  REPRESENTATIVE_ID
+  OTHER
+}
+
+enum DocumentStatus {
+  UPLOADED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum VehicleStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  REJECTED
+  DEACTIVATED
+}
+
+enum VehicleAssociationType {
+  OWNER
+  AUTHORIZED_USER
+}
+
+enum VehicleAssociationStatus {
+  PENDING
+  APPROVED
+  REMOVED
+}
+
+enum QrTokenStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum ContactRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  RESPONDED
+  CLOSED
+  REPORTED
+}
+
+enum ContactCategory {
+  PARKING
+  BLOCKED_VEHICLE
+  SECURITY
+  DELIVERY
+  OTHER
+}
+
+enum NotificationChannel {
+  PUSH
+  EMAIL
+  SMS
+  IN_APP
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum AbuseReportStatus {
+  OPEN
+  UNDER_INVESTIGATION
+  RESOLVED
+  DISMISSED
+}
+
+enum ConsentType {
+  TERMS_OF_SERVICE
+  PRIVACY_NOTICE
+  CONTACT_SHARING
+}
+
+enum OtpChallengeStatus {
+  PENDING
+  VERIFIED
+  EXPIRED
+  LOCKED
+}
+
+enum ScanOutcome {
+  SUCCESS
+  DENIED_UNAUTHENTICATED
+  DENIED_UNAUTHORIZED
+  TOKEN_INVALID
+  TOKEN_REVOKED
+  VEHICLE_INACTIVE
+  RATE_LIMITED
+}
+
+// ---------- Models ----------
+
+model User {
+  id             String       @id @default(uuid())
+  phone          String       @unique // E.164 normalized
+  fullName       String?
+  email          String?
+  status         UserStatus   @default(ACTIVE)
+  platformRole   PlatformRole?
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  sessions           UserSession[]
+  memberships        OrganizationMembership[]
+  vehicleMemberships VehicleMembership[]
+  contactRequests    ContactRequest[]       @relation("requester")
+  consentRecords     ConsentRecord[]
+  notifications      Notification[]
+  devices            UserDevice[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String    @unique // sha256 hash only
+  userAgent        String?
+  ip               String?
+  createdAt        DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+model UserDevice {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fcmToken  String   @unique
+  platform  String // "android" | "ios" | "web"
+  createdAt DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("user_devices")
+}
+
+model OtpChallenge {
+  id                String             @id @default(uuid())
+  phone             String
+  codeHash          String // HMAC-SHA256(code, pepper) — never plaintext
+  purpose           String             @default("LOGIN")
+  status            OtpChallengeStatus @default(PENDING)
+  attempts          Int                @default(0)
+  expiresAt         DateTime
+  resendAvailableAt DateTime
+  createdAt         DateTime           @default(now())
+  verifiedAt        DateTime?
+
+  @@index([phone, status])
+  @@map("otp_challenges")
+}
+
+model Organization {
+  id                 String    @id @default(uuid())
+  name               String
+  type               OrgType
+  status             OrgStatus @default(PENDING_VERIFICATION)
+  registrationNumber String?
+  addressLine1       String
+  addressLine2       String?
+  city               String
+  state              String
+  pincode            String
+  repName            String
+  repPhone           String
+  repEmail           String?
+  inviteCode         String    @unique
+  createdById        String
+  reviewedById       String?
+  reviewedAt         DateTime?
+  reviewNotes        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  memberships  OrganizationMembership[]
+  documents    OrganizationDocument[]
+  invitations  OrganizationInvitation[]
+  vehicles     Vehicle[]
+
+  @@index([status])
+  @@map("organizations")
+}
+
+model OrganizationMembership {
+  id          String           @id @default(uuid())
+  orgId       String
+  org         Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        OrgRole
+  status      MembershipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  decidedById String?
+  decidedAt   DateTime?
+
+  @@unique([orgId, userId])
+  @@index([userId, status])
+  @@map("organization_memberships")
+}
+
+model OrganizationDocument {
+  id          String         @id @default(uuid())
+  orgId       String
+  org         Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  type        DocumentType
+  status      DocumentStatus @default(UPLOADED)
+  s3Key       String         @unique
+  fileName    String
+  contentType String
+  sizeBytes   Int
+  uploadedById String
+  createdAt   DateTime       @default(now())
+
+  @@index([orgId])
+  @@map("organization_documents")
+}
+
+model OrganizationInvitation {
+  id          String    @id @default(uuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  code        String    @unique
+  role        OrgRole
+  maxUses     Int       @default(50)
+  usedCount   Int       @default(0)
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  @@index([orgId])
+  @@map("organization_invitations")
+}
+
+model Vehicle {
+  id                 String        @id @default(uuid())
+  orgId              String
+  org                Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  registrationNumber String // normalized uppercase, no spaces
+  vehicleType        String // CAR | BIKE | SCOOTER | OTHER
+  make               String?
+  model              String?
+  color              String?
+  status             VehicleStatus @default(PENDING_APPROVAL)
+  createdById        String
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  deactivatedAt      DateTime?
+
+  memberships     VehicleMembership[]
+  qrTokens        VehicleQrToken[]
+  sharing         VehicleSharingPreference?
+  contactRequests ContactRequest[]
+
+  // One ACTIVE vehicle per (org, registrationNumber) enforced by a partial
+  // unique index in a migration (Prisma cannot express partial indexes).
+  @@index([orgId, registrationNumber])
+  @@map("vehicles")
+}
+
+model VehicleMembership {
+  id              String                   @id @default(uuid())
+  vehicleId       String
+  vehicle         Vehicle                  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  associationType VehicleAssociationType
+  status          VehicleAssociationStatus @default(APPROVED)
+  createdAt       DateTime                 @default(now())
+
+  @@unique([vehicleId, userId])
+  @@index([userId])
+  @@map("vehicle_memberships")
+}
+
+model VehicleQrToken {
+  id          String        @id @default(uuid())
+  vehicleId   String
+  vehicle     Vehicle       @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  tokenHash   String        @unique // sha256 — plaintext token never stored
+  status      QrTokenStatus @default(ACTIVE)
+  issuedAt    DateTime      @default(now())
+  revokedAt   DateTime?
+  revokedById String?
+  revokedReason String?
+
+  @@index([vehicleId, status])
+  @@map("vehicle_qr_tokens")
+}
+
+model VehicleSharingPreference {
+  vehicleId             String  @id
+  vehicle               Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  shareRegNumber        Boolean @default(true)
+  shareOwnerName        Boolean @default(false)
+  shareOrgName          Boolean @default(true)
+  shareMembershipStatus Boolean @default(true)
+  allowContactRequests  Boolean @default(true)
+  allowPublicScan       Boolean @default(true)
+  updatedAt             DateTime @updatedAt
+  updatedById           String?
+
+  @@map("vehicle_sharing_preferences")
+}
+
+model ConsentRecord {
+  id         String      @id @default(uuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       ConsentType
+  granted    Boolean
+  version    String
+  recordedAt DateTime    @default(now())
+  withdrawnAt DateTime?
+
+  @@index([userId, type])
+  @@map("consent_records")
+}
+
+model ContactRequest {
+  id              String               @id @default(uuid())
+  vehicleId       String
+  vehicle         Vehicle              @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  orgId           String
+  qrTokenId       String?
+  requesterId     String
+  requester       User                 @relation("requester", fields: [requesterId], references: [id])
+  category        ContactCategory
+  message         String?
+  status          ContactRequestStatus @default(PENDING)
+  idempotencyKey  String?              @unique
+  respondedById   String?
+  respondedAt     DateTime?
+  responseMessage String?
+  createdAt       DateTime             @default(now())
+
+  @@index([vehicleId, status])
+  @@index([requesterId, status])
+  @@index([orgId, status])
+  @@map("contact_requests")
+}
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   NotificationChannel
+  type      String
+  title     String
+  body      String
+  payload   Json?
+  status    NotificationStatus  @default(QUEUED)
+  sentAt    DateTime?
+  error     String?
+  createdAt DateTime            @default(now())
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model ScanEvent {
+  id            String      @id @default(uuid())
+  qrTokenId     String?
+  vehicleId     String?
+  orgId         String?
+  scannerUserId String?
+  outcome       ScanOutcome
+  createdAt     DateTime    @default(now())
+
+  @@index([qrTokenId, createdAt])
+  @@index([vehicleId, createdAt])
+  @@map("scan_events")
+}
+
+model AbuseReport {
+  id               String            @id @default(uuid())
+  reporterId       String
+  targetUserId     String?
+  contactRequestId String?
+  vehicleId        String?
+  orgId            String?
+  reason           String
+  details          String?
+  status           AbuseReportStatus @default(OPEN)
+  createdAt        DateTime          @default(now())
+  resolvedById     String?
+  resolvedAt       DateTime?
+  resolutionNotes  String?
+
+  @@index([status])
+  @@index([orgId])
+  @@map("abuse_reports")
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  actorId      String?
+  orgId        String?
+  action       String
+  resourceType String
+  resourceId   String?
+  metadata     Json?
+  ip           String?
+  createdAt    DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("audit_logs")
+}
